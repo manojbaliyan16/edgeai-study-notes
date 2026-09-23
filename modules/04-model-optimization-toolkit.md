@@ -74,6 +74,30 @@ Both live in the same physical VRAM, but are fundamentally different kinds of co
 
 Activation memory doesn't have one fixed formula the way weight memory does — it scales with *how the model is being used* (longer input = more activation memory), not just which model it is.
 
+### Scale and zero-point, plain and simple
+
+Two words that show up everywhere in quantization — stripped down to the bare minimum.
+
+**Scale = how much real-world distance one "box" (integer step) covers.** The "price per box," in real units.
+
+**Zero-point = which box number represents the real value 0.**
+
+Simplest possible example: a ruler with only 5 marks (boxes 0–4) covering real values -10 to +10.
+
+```
+box:    0     1     2     3     4
+value: -10   -5     0     5    10
+                     ↑
+              zero-point = 2
+```
+
+- Total real range = 20, number of gaps between 5 marks = 4 → **scale = 20 ÷ 4 = 5** (each box-step = 5 real units)
+- Real zero lands exactly on **box 2** → **zero-point = 2**
+
+To turn a stored box-number back into a real value: `real value = (box number − zero-point) × scale`. Check: box 3 → `(3−2)×5 = 5` ✓.
+
+This is the same scale/zero-point that show up in the symmetric-vs-asymmetric ruler diagrams below — symmetric quantization always gets zero-point = 0 for free (zero lands on a clean code by construction), asymmetric has to store whatever zero-point the real data's min/max actually produces.
+
 ### Symmetric vs. asymmetric quantization
 
 Two independent axes of quantization design, easy to conflate — keep them separate:
@@ -110,6 +134,25 @@ https://claude.ai/code/artifact/3bba9011-6d23-4675-aa69-b4bfc5b7097c (same page,
 - Calibrated range (-0.8 to 0.8, outliers clipped): scale = 0.107 per tick — **~2.4x finer** for the 86% of values that actually matter
 
 **One-sentence definition:** calibration = choosing the clipping range using real sample data, instead of blindly trusting the literal min/max, so a handful of rare outliers don't ruin resolution for everything else.
+
+### Post-Training Quantization (PTQ) vs. Quantization-Aware Training (QAT)
+
+Everything in this file so far — the INT4 ruler, VRAM formula, symmetric/asymmetric, calibration — is **PTQ**: take an already-trained model (weights + biases fully learned), quantize it afterward, as a separate step, before deploying.
+
+**QAT** is the alternative: quantization happens *during* training, not after — the model learns to be robust to rounding error while it's still training. Usually better quality at very low bit-widths, but far more expensive (requires retraining, not just a one-time conversion pass on an existing model).
+
+### Dynamic vs. static activation quantization
+
+Both are still PTQ (after training) — the difference is **when the scale/zero-point for activations gets calculated**:
+
+| | Dynamic | Static |
+|---|---|---|
+| When scale/zero-point is computed | Fresh, live, every single inference call | Once, ahead of time, via calibration (see above) |
+| What it needs | Nothing upfront | A calibration dataset run through the model beforehand |
+| Accuracy | Higher — perfectly fit to each real input | Slightly lower if a real input differs from the calibration sample |
+| Speed | Slower — extra calculation every call | Faster — no per-call overhead, fixed numbers reused |
+
+Both require real data to exist at some point (dynamic needs live activations from actual inference; static needs sample activations from calibration runs) — the real distinction is **recompute constantly vs. compute once and reuse.**
 
 ## Connects to what I already know
 - Directly parallels the fbgemm/cuda quantization work already done on vision models in `sdv-edge-gateway` — same core idea (reduce numeric precision to shrink memory/compute), just applied to language model weights instead of CNN weights.
