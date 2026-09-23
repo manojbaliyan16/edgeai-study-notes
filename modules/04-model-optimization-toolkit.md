@@ -95,6 +95,22 @@ That example: symmetric forces the range to -0.90..0.90 (scale 0.1286), wasting 
 - **Weights → symmetric.** Trained weights naturally cluster loosely around zero, so waste is small, and it's faster/cheaper in hardware (no zero-point offset needed in the multiply). This is the default for weight quantization in GPTQ, AWQ, bitsandbytes.
 - **Activations → asymmetric.** Activations after a ReLU (or similar) are entirely non-negative and heavily skewed — symmetric would waste half the range on negative values that never occur. So production pipelines typically quantize weights symmetrically *and* activations asymmetrically, in the same model, at the same time.
 
+### Calibration — choosing the range, not just the scheme
+
+Both diagrams above assumed the "real" min/max were already known. **Calibration is the step that decides what those min/max should be** — and the honest answer is usually *not* the literal min/max of the data.
+
+**The problem:** real weight/activation distributions usually have a tight bulk near zero plus a few rare outliers far out at the edges. If you naively use the literal min/max (including the outliers), the whole 16-code range gets stretched to cover those rare extremes — wasting most of the resolution on territory almost no real value lives in.
+
+**What calibration does instead:** run a small representative sample of real data through the model, look at where most values actually fall, and deliberately pick a *tighter* clipping range that fits the bulk — clamping the rare outliers to the nearest edge code (accepting some error for just those rare values) in exchange for much finer resolution everywhere else.
+
+**Worked example (21 sampled weights, 2 outliers near ±1.9, 86% of values inside ±0.8), with histogram + before/after range diagrams:**
+https://claude.ai/code/artifact/3bba9011-6d23-4675-aa69-b4bfc5b7097c (same page, "Part 2" section)
+
+- Naive range (-1.9 to 1.9): scale = 0.253 per tick — coarse, most of the range wasted on empty territory
+- Calibrated range (-0.8 to 0.8, outliers clipped): scale = 0.107 per tick — **~2.4x finer** for the 86% of values that actually matter
+
+**One-sentence definition:** calibration = choosing the clipping range using real sample data, instead of blindly trusting the literal min/max, so a handful of rare outliers don't ruin resolution for everything else.
+
 ## Connects to what I already know
 - Directly parallels the fbgemm/cuda quantization work already done on vision models in `sdv-edge-gateway` — same core idea (reduce numeric precision to shrink memory/compute), just applied to language model weights instead of CNN weights.
 - Distinct from **pruning/distillation** — those actually reduce parameter *count*. Quantization only changes how each parameter is *stored*. Don't conflate the two.
