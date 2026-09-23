@@ -42,6 +42,38 @@ value: -0.90 -0.78 -0.66 -0.54 -0.43 -0.31 -0.19 -0.07  0.04  0.16  0.28  0.39  
 
 **Why quality degrades slightly:** values that don't land exactly on a tick get rounded — visible above as small errors (0.01–0.03). More bits (INT8) = more ticks = smaller error, at the cost of more memory. This is the core precision-vs-size tradeoff behind every quantization method (GPTQ, AWQ, GGUF, bitsandbytes).
 
+### VRAM sizing formula (weight memory)
+
+`Memory (bytes) = (n_bits / 8) × n_params`
+
+Where **n_bits is the target precision you're quantizing TO** (not the original precision) — this is the number of parameters times how many bytes each one now takes.
+
+**Worked example — 7B parameter model:**
+
+| Precision | n_bits | Calculation | Weight memory |
+|---|---|---|---|
+| FP32 (original) | 32 | (32/8) × 7B | ~28 GB |
+| FP16 | 16 | (16/8) × 7B | ~14 GB |
+| INT8 (quantized) | 8 | (8/8) × 7B | ~7 GB |
+| INT4 (quantized) | 4 | (4/8) × 7B | ~3.5 GB |
+
+**Common mistake to avoid:** don't plug in the *original* precision (e.g. 32 for FP32) — n_bits is always the *target* precision you're converting to. The ratio between original and target (e.g. 32/8 = 4x) is a separate useful number — the **compression ratio** — but it multiplies the wrong way if used directly in the formula.
+
+**Important catch — this formula is weight memory ONLY.** It does not include activation memory (the temporary numbers computed fresh per inference run — see below). Real total VRAM need = weight memory (this formula) **+** activation memory (additional, not a subdivision of the same total).
+
+### Weight memory vs. activation memory
+
+Both live in the same physical VRAM, but are fundamentally different kinds of content:
+
+| | Weight memory | Activation memory |
+|---|---|---|
+| What it stores | Fixed, learned parameters (the "spreadsheet") | Temporary values computed during inference (`weight × input` + bias, per neuron) |
+| When created | Once, at training time, saved to model file | Fresh, every single inference run — discarded after |
+| Size formula | `(n_bits/8) × n_params` — fixed per model | Depends on sequence length, batch size, number of layers, hidden size — varies per request |
+| On the ECU analogy | Calibration table (tuned once, stored) | Live computed output for the current engine cycle (recalculated every cycle, not stored) |
+
+Activation memory doesn't have one fixed formula the way weight memory does — it scales with *how the model is being used* (longer input = more activation memory), not just which model it is.
+
 ## Connects to what I already know
 - Directly parallels the fbgemm/cuda quantization work already done on vision models in `sdv-edge-gateway` — same core idea (reduce numeric precision to shrink memory/compute), just applied to language model weights instead of CNN weights.
 - Distinct from **pruning/distillation** — those actually reduce parameter *count*. Quantization only changes how each parameter is *stored*. Don't conflate the two.
