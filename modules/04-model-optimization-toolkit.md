@@ -74,6 +74,27 @@ Both live in the same physical VRAM, but are fundamentally different kinds of co
 
 Activation memory doesn't have one fixed formula the way weight memory does — it scales with *how the model is being used* (longer input = more activation memory), not just which model it is.
 
+### Symmetric vs. asymmetric quantization
+
+Two independent axes of quantization design, easy to conflate — keep them separate:
+
+**What gets quantized (two targets):**
+1. **Weight quantization** — the fixed, learned parameters. Done once, frozen after.
+2. **Activation quantization** — the computed outputs (`input × weight + bias`, from the activations concept above). Recalculated live, every inference run.
+
+**How it gets quantized (two schemes), applying to either target:**
+- **Symmetric** — forces the representable range to be centered on zero (using the largest magnitude value). Zero always lands exactly on a code, so no extra storage needed — just a scale factor. Simple, cheap in hardware, but wastes codes if the real data isn't actually centered on zero.
+- **Asymmetric** — uses the real min/max directly, no forcing. Every code does useful work (finer precision), but zero usually doesn't land on a clean code anymore, so an extra number — the **zero-point** — has to be stored alongside the scale to know which code represents real zero.
+
+**Full worked comparison (5 weights: `-0.20, -0.05, 0.03, 0.31, 0.87`), with two number-line diagrams:**
+https://claude.ai/code/artifact/3bba9011-6d23-4675-aa69-b4bfc5b7097c
+
+That example: symmetric forces the range to -0.90..0.90 (scale 0.1286), wasting 6 of 16 codes since the data never goes that low. Asymmetric fits -0.20..0.90 directly (scale 0.0733, zero-point at code 3), using all 16 codes for ~1.75x finer resolution — at the cost of storing that zero-point.
+
+**Which is used where, in real deployments (both used simultaneously, not either/or):**
+- **Weights → symmetric.** Trained weights naturally cluster loosely around zero, so waste is small, and it's faster/cheaper in hardware (no zero-point offset needed in the multiply). This is the default for weight quantization in GPTQ, AWQ, bitsandbytes.
+- **Activations → asymmetric.** Activations after a ReLU (or similar) are entirely non-negative and heavily skewed — symmetric would waste half the range on negative values that never occur. So production pipelines typically quantize weights symmetrically *and* activations asymmetrically, in the same model, at the same time.
+
 ## Connects to what I already know
 - Directly parallels the fbgemm/cuda quantization work already done on vision models in `sdv-edge-gateway` — same core idea (reduce numeric precision to shrink memory/compute), just applied to language model weights instead of CNN weights.
 - Distinct from **pruning/distillation** — those actually reduce parameter *count*. Quantization only changes how each parameter is *stored*. Don't conflate the two.
