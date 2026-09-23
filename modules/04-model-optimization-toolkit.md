@@ -152,6 +152,37 @@ Both are still PTQ (after training) — the difference is **when the scale/zero-
 | Accuracy | Higher — perfectly fit to each real input | Slightly lower if a real input differs from the calibration sample |
 | Speed | Slower — extra calculation every call | Faster — no per-call overhead, fixed numbers reused |
 
+### Weight quantization timing: recompute-every-load vs. quantize-once-save
+
+A separate axis from dynamic/static activation quantization above — this one is about **weights**, and about *how often* the quantization math gets redone, not about per-inference-call timing:
+
+- **Recompute every load (bitsandbytes)** — the original FP16 weights stay on disk unquantized. Every time `from_pretrained(..., load_in_4bit=True)` runs, bitsandbytes converts them to INT4 fresh, in memory, right then. Nothing quantized gets saved back to disk. Cheap enough (seconds) to not matter in practice, but it is real repeated work, once per **process load** (not once per inference call, and not once ever).
+- **Quantize once, save, just load the file (TensorRT, GGUF, GPTQ)** — a separate build/conversion step runs once, produces an already-quantized file, and every future load just reads that file's bytes — no quantization math at load time at all.
+
+### Hands-on: bitsandbytes on Google Colab (T4 GPU)
+
+Ran the FP16 → INT8 → INT4 comparison for `microsoft/Phi-3-mini-4k-instruct` (3.8B params) on a free Colab T4.
+
+**Notebook:** [`notebooks/04-quantization-bitsandbytes.ipynb`](../notebooks/04-quantization-bitsandbytes.ipynb)
+
+**Real measured VRAM vs. the formula prediction:**
+
+| Precision | Measured VRAM | Formula prediction `(n_bits/8)×3.8B` |
+|---|---|---|
+| FP16 | 7.64 GB | 7.6 GB |
+| INT8 | 4.02 GB | 3.8 GB |
+| INT4 | 2.44 GB | 1.9 GB |
+
+FP16 matches the formula almost exactly. INT8/INT4 come in a bit *higher* than the pure formula — expected, because not every layer gets quantized (embeddings and some norm layers typically stay in higher precision) and the scale/zero-point constants themselves take a small amount of extra storage. **The formula gives the theoretical floor; real measured VRAM is always a bit above it.**
+
+**Quality check at INT4** — prompt: *"Explain what a check engine light means in one sentence."* → response: *"The check engine light illuminates when the vehicle's on-board diagnostics system detects an issue with the engine or related components."* Coherent, correct — aggressive 4-bit compression didn't visibly hurt quality for this simple task.
+
+**Key `BitsAndBytesConfig` params used:**
+- `load_in_4bit=True` — enables 4-bit quantization at load time
+- `bnb_4bit_quant_type="nf4"` — NormalFloat4, HF's recommended data type for normally-distributed weights
+- `bnb_4bit_compute_dtype=torch.bfloat16` — weights stored at 4-bit, temporarily dequantized to this dtype during the forward pass for speed/precision
+- `bnb_4bit_use_double_quant=True` (optional) — quantizes the quantization constants themselves too, saving another ~0.4GB per 1B params
+
 Both require real data to exist at some point (dynamic needs live activations from actual inference; static needs sample activations from calibration runs) — the real distinction is **recompute constantly vs. compute once and reuse.**
 
 ## Connects to what I already know

@@ -16,6 +16,8 @@ Each module gets a `modules/NN-module-name.md` file with:
 - Open questions / gaps
 - Hands-on exercise notes, if any
 
+Runnable hands-on notebooks live separately in `notebooks/NN-topic.ipynb`, linked from the matching module's notes file.
+
 ## Curriculum Map
 
 | # | Module | Phase | Focus |
