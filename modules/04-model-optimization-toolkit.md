@@ -5,6 +5,17 @@
 
 ## Key Concepts
 
+### Quantization techniques, quick reference (from the course repo)
+
+Four techniques, as the course material lists them:
+
+- **Post-Training Quantization (PTQ)** — applied after model training, without requiring retraining
+- **Quantization-Aware Training (QAT)** — incorporates quantization effects during training, for better accuracy
+- **Dynamic Quantization** — quantizes weights to INT8, but calculates activations dynamically
+- **Static Quantization** — pre-computes all quantization parameters for both weights and activations
+
+All four already covered in depth below with worked examples — see [PTQ vs. QAT](#post-training-quantization-ptq-vs-quantization-aware-training-qat) and [Dynamic vs. static activation quantization](#dynamic-vs-static-activation-quantization). One framing note: this list treats PTQ/QAT and Dynamic/Static as four separate parallel techniques; the mental model built out below is that dynamic/static are really a choice *within* PTQ specifically (both are still "after training," just differing in *when* the scale/zero-point gets computed) — same substance, this repo's notes just nest it one level deeper.
+
 ### What quantization actually is (and isn't)
 
 Quantization does **not** reduce the number of parameters — a 7B model stays a 7B model. It reduces how much storage **each parameter** takes, by converting the data type each number is stored as:
