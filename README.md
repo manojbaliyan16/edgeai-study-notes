@@ -6,7 +6,7 @@ Notes framed against my automotive/embedded background (RTCU telematics architec
 
 ## Progress
 
-See [PROGRESS.md](PROGRESS.md) for the live module checklist.
+See [PROGRESS.md](PROGRESS.md) for the live module checklist, and [STUDY_PLAN.md](STUDY_PLAN.md) for the governing sequence — this repo is merged with a second repo (`100-days-of-inference`) into one ordered 8-step plan so the overlapping quantization/ONNX content isn't studied twice.
 
 ## Structure
 
