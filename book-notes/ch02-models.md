@@ -29,5 +29,24 @@
 - **"Semantic" = about meaning, not spelling/pixels.** In the embedding space, points get placed by what they *mean* — "dog," "puppy," "golden retriever" cluster close together; "car," "engine" sit far away, even though "dog" and "car" share zero letters.
 - **Semantic search** = finding the nearest points in that space to a query's embedding. Searching "puppy" can surface a document that only ever said "golden retriever" and never used the word "puppy" — because they're close together in meaning-space, not in spelling.
 
+## Model types: image vs. text, autoregressive generation
+
+- **Image models** and **text models** are architected differently for the same reason as the dimensionality section above — image models compress (millions of pixels → small representation), text models expand (few tokens → large representation) — but both are still built from the same neuron/layer structure underneath.
+- **Autoregressive** (not "regressive" — different term, regression means predicting a continuous number) generative models produce output **one token at a time**: predict a token, append it to the input, feed the whole thing back in, predict the next token. Repeats until done.
+
+## Neurons, layers, hidden layers, encoder/decoder
+
+**Diagram:** https://claude.ai/code/artifact/e633dd59-c22b-4289-8d2b-c116d28eae81
+
+**Key points:**
+- **Neuron** = the smallest unit (same thing as "node" from the Layers section above). A group of neurons forms a **layer**.
+- Every layer except the **first** (input layer) and **last** (output layer) is a **hidden layer**.
+- **Encoder** = the input-side layers, which process the raw input down into one **internal representation**.
+- **Decoder** = the output-side layers, which take that internal representation and expand it back out into the final output.
+- Common mix-up worth flagging for next time: it's easy to say these backwards — encoder *builds* the representation, decoder *consumes* it to produce output, not the other way round.
+
 ## Open Questions
 - How exactly does an image model's pixel→embedding compression decide what's "redundant" vs "meaningful"? (Revisit when hands-on with a vision encoder.)
+
+## Next session
+Resume from **§2.1.1 Linear Layers and Matmul**.
