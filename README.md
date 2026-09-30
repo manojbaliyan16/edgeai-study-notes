@@ -1,6 +1,6 @@
 # Edge AI for Beginners — Study Notes
 
-Study log tracking my progress through [edgeai-for-beginners](https://github.com/manojbaliyan16/edgeai-for-beginners) (fork of Microsoft's Edge AI course).
+Study log tracking my progress through [edgeai-for-beginners](https://github.com/manojbaliyan16/edgeai-for-beginners) (fork of Microsoft's Edge AI course), merged with [100-days-of-inference](https://github.com/manojbaliyan16/100-days-of-inference) (own inference-engineering study, based on Philip Kiely's *Inference Engineering* book) per the single sequence in [STUDY_PLAN.md](STUDY_PLAN.md).
 
 Notes framed against my automotive/embedded background (RTCU telematics architecture, TensorRT/YOLOv8 edge inference, `sdv-edge-gateway`) — see [manojbaliyan16/sdv-edge-gateway](https://github.com/manojbaliyan16/sdv-edge-gateway) and [manojbaliyan16/ml-automotive-foundations](https://github.com/manojbaliyan16/ml-automotive-foundations) for the related project work.
 
@@ -17,6 +17,8 @@ Each module gets a `modules/NN-module-name.md` file with:
 - Hands-on exercise notes, if any
 
 Runnable hands-on notebooks live separately in `notebooks/NN-topic.ipynb`, linked from the matching module's notes file.
+
+Inference Engineering book / `100-days-of-inference` coverage lives in `book-notes/chNN-topic.md` — same format (own-words notes, diagrams, connections to existing work), organized by book chapter rather than course module number. Diagrams are published as Claude Artifacts and linked inline rather than embedded as static images.
 
 ## Curriculum Map
 
