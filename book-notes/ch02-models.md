@@ -36,7 +36,35 @@
 
 ## Neurons, layers, hidden layers, encoder/decoder
 
-**Diagram:** https://claude.ai/code/artifact/e633dd59-c22b-4289-8d2b-c116d28eae81
+```mermaid
+flowchart LR
+    subgraph ENC["ENCODER — builds the internal representation"]
+        direction LR
+        I1((n1)) --> H1((n1))
+        I1 --> H2((n2))
+        I1 --> H3((n3))
+        I2((n2)) --> H1
+        I2 --> H2
+        I2 --> H3
+        I3((n3)) --> H1
+        I3 --> H2
+        I3 --> H3
+    end
+
+    H1 --> R((internal<br/>representation))
+    H2 --> R
+    H3 --> R
+
+    subgraph DEC["DECODER — produces the output"]
+        direction LR
+        R --> H4((n1))
+        R --> H5((n2))
+        H4 --> O((output))
+        H5 --> O
+    end
+```
+
+Full annotated version (with the autoregressive-generation companion figure): https://claude.ai/code/artifact/e633dd59-c22b-4289-8d2b-c116d28eae81
 
 **Key points:**
 - **Neuron** = the smallest unit (same thing as "node" from the Layers section above). A group of neurons forms a **layer**.
