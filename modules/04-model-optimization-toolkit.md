@@ -121,10 +121,24 @@ Two independent axes of quantization design, easy to conflate — keep them sepa
 - **Symmetric** — forces the representable range to be centered on zero (using the largest magnitude value). Zero always lands exactly on a code, so no extra storage needed — just a scale factor. Simple, cheap in hardware, but wastes codes if the real data isn't actually centered on zero.
 - **Asymmetric** — uses the real min/max directly, no forcing. Every code does useful work (finer precision), but zero usually doesn't land on a clean code anymore, so an extra number — the **zero-point** — has to be stored alongside the scale to know which code represents real zero.
 
-**Full worked comparison (5 weights: `-0.20, -0.05, 0.03, 0.31, 0.87`), with two number-line diagrams:**
-https://claude.ai/code/artifact/3bba9011-6d23-4675-aa69-b4bfc5b7097c
+**Full worked comparison — 5 weights: `-0.20, -0.05, 0.03, 0.31, 0.87`**
 
-That example: symmetric forces the range to -0.90..0.90 (scale 0.1286), wasting 6 of 16 codes since the data never goes that low. Asymmetric fits -0.20..0.90 directly (scale 0.0733, zero-point at code 3), using all 16 codes for ~1.75x finer resolution — at the cost of storing that zero-point.
+**Symmetric** (forces range to ±0.90, the largest magnitude; signed codes -8..7; scale = 0.1286):
+```
+code:  -8    -7    -6    -5    -4    -3    -2    -1     0     1     2     3     4     5     6     7
+value: -1.03 -0.90 -0.77 -0.64 -0.51 -0.39 -0.26 -0.13  0.00  0.13  0.26  0.39  0.51  0.64  0.77  0.90
+       |<------------- wasted: no data this low ------------->|<---------- actually used ---------->|
+```
+6 of 16 codes (-8 to -3) sit below the real minimum (-0.20) — wasted. Zero lands exactly on code 0, free.
+
+**Asymmetric** (fits the real range -0.20..0.90 directly; unsigned codes 0..15; scale = 0.0733):
+```
+code:   0     1     2     3     4     5     6     7     8     9    10    11    12    13    14    15
+value: -0.20 -0.13 -0.06  0.01  0.09  0.17  0.24  0.31  0.39  0.46  0.54  0.61  0.68  0.76  0.83  0.90
+                          ↑
+                   zero-point = 3
+```
+All 16 codes fall inside the real data range — zero cost wasted on headroom that's never used. ~1.75x finer resolution than symmetric (0.0733 vs 0.1286 per code) — at the cost of storing that zero-point = 3.
 
 **Which is used where, in real deployments (both used simultaneously, not either/or):**
 - **Weights → symmetric.** Trained weights naturally cluster loosely around zero, so waste is small, and it's faster/cheaper in hardware (no zero-point offset needed in the multiply). This is the default for weight quantization in GPTQ, AWQ, bitsandbytes.
@@ -138,8 +152,21 @@ Both diagrams above assumed the "real" min/max were already known. **Calibration
 
 **What calibration does instead:** run a small representative sample of real data through the model, look at where most values actually fall, and deliberately pick a *tighter* clipping range that fits the bulk — clamping the rare outliers to the nearest edge code (accepting some error for just those rare values) in exchange for much finer resolution everywhere else.
 
-**Worked example (21 sampled weights, 2 outliers near ±1.9, 86% of values inside ±0.8), with histogram + before/after range diagrams:**
-https://claude.ai/code/artifact/3bba9011-6d23-4675-aa69-b4bfc5b7097c (same page, "Part 2" section)
+**Worked example — 21 sampled weights, 2 outliers near ±1.9, 86% of values inside ±0.8**
+
+**Naive range** (literal min/max, -1.9 to 1.9; scale = 0.253):
+```
+code:   0     1     2     3     4     5     6     7     8     9    10    11    12    13    14    15
+value: -1.90 -1.65 -1.39 -1.14 -0.89 -0.63 -0.38 -0.13  0.13  0.38  0.63  0.89  1.14  1.39  1.65  1.90
+             |<------------------ most codes land where almost no data lives ------------------>|
+```
+
+**Calibrated range** (outliers clipped, -0.8 to 0.8; scale = 0.107):
+```
+code:   0     1     2     3     4     5     6     7     8     9    10    11    12    13    14    15
+value: -0.80 -0.69 -0.59 -0.48 -0.37 -0.27 -0.16 -0.05  0.05  0.16  0.27  0.37  0.48  0.59  0.69  0.80
+       |<------------------------- every code now covers real data -------------------------->|
+```
 
 - Naive range (-1.9 to 1.9): scale = 0.253 per tick — coarse, most of the range wasted on empty territory
 - Calibrated range (-0.8 to 0.8, outliers clipped): scale = 0.107 per tick — **~2.4x finer** for the 86% of values that actually matter
