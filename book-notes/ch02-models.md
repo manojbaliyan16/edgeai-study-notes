@@ -131,8 +131,25 @@ A neuron is the smallest unit - same thing as "node" above, just the book's pref
 
 The encoder/decoder split follows naturally from that: the input-side layers are the encoder, squeezing the raw input down into one internal representation. The output-side layers are the decoder, taking that representation and expanding it back out into the final answer. I had this backwards the first time I tried to explain it out loud - easy mix-up, so worth writing down plainly: encoder builds the representation, decoder consumes it.
 
+## §2.1.1 Linear Layers and Matmul
+
+A linear layer is the simplest form of matrix multiplication: an input vector goes in, gets multiplied by a weight matrix, a bias vector gets added, and an output vector comes out. First read that felt like a new concept on top of everything above, but it isn't - it's the same "each neuron computes `weight x input + bias`" idea, just written for a whole layer at once instead of one neuron at a time.
+
+Take the 3-neuron layer from earlier and give it a 2-number input, `x = [2, 1]`:
+
+```
+weight matrix W (3 neurons x 2 inputs)      input x       bias b       output
+[ 1   2 ]                                   [2]            [1]          [5]   <- neuron 1
+[ 0   1 ]            x                      [1]      +     [0]     =    [1]   <- neuron 2
+[ 3  -1 ]                                                  [2]          [7]   <- neuron 3
+```
+
+Each row of the matrix belongs entirely to one neuron. Row 1 (`1, 2`) is neuron 1's weights, nobody else's - multiply it against the input, add neuron 1's own bias (1), and that's neuron 1's output: `(1x2) + (2x1) + 1 = 5`. Same for row 2: `(0x2) + (1x1) + 0 = 1`. Row 3: `(3x2) + (-1x1) + 2 = 7`.
+
+So `Wx + b` isn't a separate operation bolted onto the neuron picture - it's the exact same per-neuron calculation, packed row by row into one matrix so all three neurons get computed in a single step instead of a loop.
+
 ## Open Questions
 - How exactly does an image model's pixel-to-embedding compression decide what's "redundant" vs "meaningful"? Revisit once I'm hands-on with a vision encoder.
 
 ## Next session
-Resume from **§2.1.1 Linear Layers and Matmul**.
+Continue from §2.1.1, past the linear-layer/matmul equivalence above.
