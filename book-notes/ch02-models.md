@@ -191,51 +191,133 @@ ReLU(x) = max(0, x)
 Every neuron produces a raw number first (`weight x input + bias`) - that raw number is the pre-activation. Run it through ReLU and the result is the neuron's **activation**: negative input becomes 0, positive input passes through unchanged. That's the whole rule. "Activation function" is just the name for whatever bends that raw number before it moves on to the next layer.
 
 ## Open Questions
+- Why is prefill compute-bound while decode is memory-bound? Next thing to work out.
 - How exactly does an image model's pixel-to-embedding compression decide what's "redundant" vs "meaningful"? Revisit once I'm hands-on with a vision encoder.
 
-## §2.2 LLM Inference Mechanics - tokens and the generation loop
+## §2.2 LLM Inference Mechanics
 
-An LLM generates one token at a time, and each new token depends on every token before it. A **token** is a number standing for a chunk of text: a whole common word, or a fragment of a rarer one. Turning text into tokens and back needs no neural network. A tokenizer is just a lookup table, and the full table is the model's **vocabulary** (usually over 100,000 entries). Fewer tokens for the same text means fewer forward passes, so a more efficient tokenizer makes inference faster.
+### What inference is
 
-```
-"Unbelievably good" -> [ "Un", "believ", "ably", " good" ] -> [4821, 90113, 2204, 1695]
-                        common words = 1 token, rare words split into pieces
-```
+Training is the one-time job of adjusting a model's weights until it predicts text well. It runs for weeks on a GPU cluster and ends with a file of weights (billions of numbers). Inference is using that finished file to answer a request. The weights are frozen, nothing is learned while answering.
 
-Three token sequences can exist in one request:
-- **Input**: prompt, chat history, tool definitions
-- **Reasoning**: optional thinking tokens (reasoning models only)
-- **Output**: the answer
+Think of training as studying for an exam and inference as sitting it. Your notes don't change mid-exam.
 
-All three together must fit inside the **context window**. `max_tokens` caps the output part only. A **chat template** flattens roles and tool signatures into the single input string; it differs per model, and tokenizing the templated input is step zero.
+Inference is the part users actually touch. Every chat message, API call and autocomplete is one inference request, so the ongoing cost and the waiting time both live here. That is why inference engineering exists as its own field.
 
-```
- text --chat template--> tokens
-                           |
-                   +-------v--------+
-                   |    PREFILL     |  read the whole input once, build the KV cache
-                   +-------+--------+
-                           |
-                   +-------v--------+
-              +--->|    DECODE      |  one forward pass = one token
-              |    +-------+--------+
-              |            | logits (one score per vocabulary entry)
-              |            v
-              |    normalize -> probabilities -> pick one token
-              |            |
-              +--- not stop token? append it, go again
-                           |
-                       stop token / max_tokens / context full -> done
+```mermaid
+flowchart LR
+  T["TRAINING<br/>learn from huge data<br/>weights change<br/>done once on a GPU cluster"] -->|"saves weights file"| I["INFERENCE<br/>answer a prompt<br/>weights frozen<br/>runs on every request"]
 ```
 
-The network's last layer outputs a **logit vector** as long as the vocabulary. After normalizing, each entry is the probability that token comes next. The pick is a weighted random draw, which three knobs steer:
-- **Temperature**: reshapes the logits before normalizing (lower = more predictable)
-- **Top-k**: keep only the k likeliest tokens, re-normalize
-- **Top-p**: keep the smallest set of tokens whose probabilities add up to p
+### Tokens and vocabulary
 
-Temperature 0 or top-k 1 makes the pick deterministic (always the likeliest token). For structured output like JSON, **logit biasing** forces invalid tokens out after each pass.
+An LLM generates one token at a time, and each new token depends on every token before it. A token is a number standing for a chunk of text: a whole common word, or a fragment of a rarer one. Turning text into tokens and back needs no neural network. The tokenizer is a plain lookup table, and the full table is the model's vocabulary (usually over 100,000 entries). A more efficient tokenizer means fewer tokens for the same text, so fewer forward passes and faster inference.
 
-Prefill and decode account for nearly all inference time, because both run the big network.
+```
+"Explain TLS"  ->  [ "Explain", " TLS" ]  ->  [ 1842, 9031 ]
+common words are one token, rare words split into pieces
+```
+
+### Three sequences and the context window
+
+A request can contain three token sequences:
+
+- **Input**: prompt, chat history, tool definitions.
+- **Reasoning**: optional, only for thinking models. Tokens the model writes to itself before answering.
+- **Output**: the answer.
+
+The **context window** is the total number of tokens the model can process and generate per request. All three sequences have to fit inside it together. `max_tokens` caps the output part only.
+
+```
+|<--------------------- context window --------------------->|
+|  INPUT                 |  REASONING        |  OUTPUT       |
+|  prompt, history,      |  optional,        |  the answer   |
+|  tool definitions      |  thinking models  |  (max_tokens  |
+|                        |  only             |  caps this)   |
+```
+
+The window is per request, not per conversation. The model remembers nothing between requests, so a chat app re-sends the earlier turns as part of the input each time. A long chat eats the window.
+
+### Who builds the input
+
+The model does not choose its input. The application collects the pieces, and the chat template (a model-specific format) flattens them into one token sequence. Tokenizing that flattened text is step zero of inference.
+
+```mermaid
+flowchart LR
+  S["system prompt<br/>developer rules"] --> CT
+  H["chat history<br/>earlier turns"] --> CT
+  U["your new message"] --> CT
+  TD["tool definitions"] --> CT
+  CT["chat template<br/>model-specific format"] --> SEQ["one flat token sequence"]
+  SEQ --> PF["goes into PREFILL"]
+```
+
+### The two phases
+
+Every request runs in two phases:
+
+- **Prefill**: read the whole input in one go. All input tokens are processed together, and the results are saved in the KV cache.
+- **Decode**: write the output one token per forward pass. Each token needs the ones before it, so passes cannot be skipped or run in parallel for a single request.
+
+```mermaid
+flowchart TD
+  A["text prompt"] --> B["chat template + tokenizer<br/>text to token numbers"]
+  B --> C["PREFILL<br/>read all input tokens at once<br/>fill the KV cache"]
+  C --> D["DECODE<br/>one forward pass"]
+  D --> E["logits<br/>one score per vocabulary word"]
+  E --> F["normalize to probabilities<br/>weighted random pick"]
+  F --> G{"stop token or<br/>limit reached?"}
+  G -->|"no: append token, go again"| D
+  G -->|yes| H["done"]
+```
+
+Prefill and decode account for nearly all inference time, because both run the full network.
+
+### KV cache
+
+Attention is how each token looks back at the earlier tokens to decide which ones matter for it. (The mechanics are not covered in these notes yet.) For attention, every token produces two sets of numbers, called K and V, that later tokens read.
+
+A token's K and V never change once computed, because earlier tokens never depend on later ones. So they are stored in a table with one row per token. That table is the KV cache.
+
+```
+            token     K          V
+ prefill    Explain   numbers    numbers
+ (filled    TLS       numbers    numbers
+  at once)
+ decode     is        numbers    numbers    <- added on pass 1
+ (one row   a         numbers    numbers    <- added on pass 2
+  per pass) (next)    ......     ......     <- next pass adds its row here
+```
+
+- Without the cache, every decode pass would recompute K and V for all earlier tokens.
+- With the cache, a pass computes only the new token's row and reads the rest from the table.
+- The price is memory. The table sits in GPU memory and grows with every token, so longer conversations use more of it.
+
+### How the output token is chosen
+
+The last layer of the network produces a vector of logits, one score for every word in the vocabulary, so its length equals the vocabulary size. After normalizing, the scores become probabilities. The model does not decide the way a person does. The pick is a dice roll weighted by those probabilities. Training is what makes the right word score highest.
+
+```
+Prompt: "The capital of France is"        (example numbers, only the shape matters)
+
+ Paris         ########################################  92%
+ the           ##                                          4%
+ a             #                                           2%
+ Lyon          #                                           1%
+ 99,996 others #                                           1% combined
+
+ weighted dice roll: Paris comes out about 92 times in 100
+```
+
+Three settings reshape that pick:
+
+- **Temperature**: adjusts the logits before normalizing. Lower is more predictable, higher flattens the bars so other words get a chance.
+- **Top-k**: keep only the k most likely tokens, re-normalize among them.
+- **Top-p**: keep the smallest set of tokens whose probabilities add up to p.
+
+Temperature 0 or top-k 1 makes the pick deterministic: always the highest score, so the same input gives the same output. For structured output such as JSON, logit biasing pushes invalid tokens out after each pass.
+
+The loop repeats until the model produces a stop token (a special value meaning the output is finished), unless the context window or `max_tokens` is hit first.
 
 ## Next session
-Continue §2.2: dig into prefill vs decode (why one is compute-bound and the other memory-bound), then §2.2.1 LLM Architecture (`config.json`, how to read a name like `Qwen3MoeForCausalLM`).
+Continue §2.2: why prefill and decode behave differently on a GPU (compute-bound vs memory-bound), then §2.2.1 LLM Architecture (`config.json`, how to read a name like `Qwen3MoeForCausalLM`).
