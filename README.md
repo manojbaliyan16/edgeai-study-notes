@@ -1,12 +1,12 @@
-# Edge AI for Beginners — Study Notes
+# Edge AI for Beginners - Study Notes
 
 Study log tracking my progress through [edgeai-for-beginners](https://github.com/manojbaliyan16/edgeai-for-beginners) (fork of Microsoft's Edge AI course), merged with [100-days-of-inference](https://github.com/manojbaliyan16/100-days-of-inference) (own inference-engineering study, based on Philip Kiely's *Inference Engineering* book) per the single sequence in [STUDY_PLAN.md](STUDY_PLAN.md).
 
-Notes framed against my automotive/embedded background (RTCU telematics architecture, TensorRT/YOLOv8 edge inference, `sdv-edge-gateway`) — see [manojbaliyan16/sdv-edge-gateway](https://github.com/manojbaliyan16/sdv-edge-gateway) and [manojbaliyan16/ml-automotive-foundations](https://github.com/manojbaliyan16/ml-automotive-foundations) for the related project work.
+Notes framed against my automotive/embedded background (RTCU telematics architecture, TensorRT/YOLOv8 edge inference, `sdv-edge-gateway`) - see [manojbaliyan16/sdv-edge-gateway](https://github.com/manojbaliyan16/sdv-edge-gateway) and [manojbaliyan16/ml-automotive-foundations](https://github.com/manojbaliyan16/ml-automotive-foundations) for the related project work.
 
 ## Progress
 
-See [PROGRESS.md](PROGRESS.md) for the live module checklist, and [STUDY_PLAN.md](STUDY_PLAN.md) for the governing sequence — this repo is merged with a second repo (`100-days-of-inference`) into one ordered 8-step plan so the overlapping quantization/ONNX content isn't studied twice.
+See [PROGRESS.md](PROGRESS.md) for the live module checklist, and [STUDY_PLAN.md](STUDY_PLAN.md) for the governing sequence - this repo is merged with a second repo (`100-days-of-inference`) into one ordered 8-step plan so the overlapping quantization/ONNX content isn't studied twice.
 
 ## Structure
 
@@ -18,7 +18,7 @@ Each module gets a `modules/NN-module-name.md` file with:
 
 Runnable hands-on notebooks live separately in `notebooks/NN-topic.ipynb`, linked from the matching module's notes file.
 
-Inference Engineering book / `100-days-of-inference` coverage lives in `book-notes/chNN-topic.md` — same format (own-words notes, diagrams, connections to existing work), organized by book chapter rather than course module number. Diagrams are published as Claude Artifacts and linked inline rather than embedded as static images.
+Inference Engineering book / `100-days-of-inference` coverage lives in `book-notes/chNN-topic.md` - same format (own-words notes, diagrams, connections to existing work), organized by book chapter rather than course module number. Diagrams are plain Mermaid or ASCII-art, embedded directly in the markdown so nothing depends on an external viewer or account.
 
 ## Curriculum Map
 

@@ -1,11 +1,11 @@
-# Inference Engineering — Chapter 2: Models
+# Inference Engineering - Chapter 2: Models
 
 **Source:** *Inference Engineering* by Philip Kiely
-**Related:** `100-days-of-inference` repo, Day 02 (`day02/` — tokenization, model internals) covers overlapping ground; reading the book directly per own choice, building own notes rather than following the repo's notebooks.
+**Related:** `100-days-of-inference` repo, Day 02 (`day02/` - tokenization, model internals) covers overlapping ground. Reading the book directly instead, building my own notes rather than following the repo's notebooks.
 
 ## Layers, nodes, and connections
 
-> "A group of nodes forms a layer. Nodes within a layer are independent of each other — they do their own calculations. The connection between nodes, or the 'network' in a neural network, is between layers, where the nodes in a layer receive the output of the previous layer."
+> "A group of nodes forms a layer. Nodes within a layer are independent of each other - they do their own calculations. The connection between nodes, or the 'network' in a neural network, is between layers, where the nodes in a layer receive the output of the previous layer."
 
 ```mermaid
 flowchart LR
@@ -51,14 +51,11 @@ flowchart LR
     B4 -.-> C2
 ```
 
-No line ever connects two nodes inside the same layer box — each computes independently, in parallel. All connections cross **between** layers: every node in one layer feeds every node in the next.
+No line ever connects two nodes inside the same layer box. Each one computes independently, in parallel - no idea what its neighbors are doing. Every connection crosses between layers instead: a node sends its output to *every* node in the next layer, not just one.
 
-**Key points:**
-- A **layer** is a *group* of nodes, not a stand-in for a single node — nodes compose layers.
-- Nodes **within** a layer never connect to each other — each computes independently, in parallel.
-- Connections only cross **between** layers: every node in one layer sends its output to every node in the next layer.
-- "Connection is between layers" describes the *pattern* (cross-layer only) — the actual wires are still node-to-node, just zoomed out.
-- Flow: input → Layer 1 nodes compute independently → **all** of Layer 1's outputs handed to **every** Layer 2 node → Layer 2 computes → repeats to output. Each node combines *all* of the previous layer's outputs using its own weights (`weight × input + bias`, from the Module 04 activations work) to produce one output number.
+A layer, really, is just a group of nodes - not a stand-in for a single node the way I kept half-assuming. So when the book says "the connection is between layers," it's describing the overall pattern (wires only ever cross layer boundaries), not claiming connections skip individual nodes. Zoom in and it's still node-to-node wiring; zoom out and the pattern reads as layer-to-layer.
+
+Flow, start to finish: input arrives, Layer 1's nodes each compute on their own, all of those outputs get handed to every node in Layer 2, Layer 2 computes, and so on until the output layer. Each node is doing the same basic thing we covered back in Module 04 - combining everything it receives with its own weights (`weight x input + bias`) to produce one number.
 
 ## Dimensionality: text expands, images shrink
 
@@ -70,12 +67,9 @@ flowchart LR
     I["IMAGE<br/>millions of pixels"] -->|shrinks| E
 ```
 
-**Key points:**
-- **Text:** starts small (a handful of tokens) → **expands** to a vector of hundreds/thousands of numbers (an embedding) to capture nuance/meaning that a few raw tokens can't hold.
-- **Images:** start huge (millions of raw pixels, mostly redundant/correlated) → **shrink** down to the same kind of fixed-size embedding vector, discarding redundancy while keeping the meaningful content.
-- Both processes converge on the *same kind of object*: a fixed-size embedding vector — text gets there by expanding, images get there by compressing.
+Text starts small - a handful of tokens - and expands outward into a vector of hundreds or thousands of numbers, because a few raw tokens can't hold enough nuance on their own. Images run the opposite direction: millions of raw pixels, most of it redundant, get compressed down into that same kind of fixed-size vector. Different starting points, same destination - one fixed-size embedding that's supposed to capture "meaning."
 
-**What "semantic" means — a map where distance = meaning, not spelling:**
+What "semantic" actually means - a map where distance stands for meaning, not spelling:
 
 ```mermaid
 graph LR
@@ -89,13 +83,13 @@ graph LR
     linkStyle 5 stroke:#999,stroke-dasharray: 4 4
 ```
 
-- **"Semantic" = about meaning, not spelling/pixels.** In the embedding space, points get placed by what they *mean* — "dog," "puppy," "golden retriever" cluster close together; "car," "engine" sit far away, even though "dog" and "car" share zero letters.
-- **Semantic search** = finding the nearest points in that space to a query's embedding. Searching "puppy" can surface a document that only ever said "golden retriever" and never used the word "puppy" — because they're close together in meaning-space, not in spelling.
+That's the part I kept getting hung up on with "semantic search." In this embedding space, points land near each other based on what they mean, not how they're spelled - "dog," "puppy," and "golden retriever" cluster together; "car" and "engine" sit way off to the side, even though "dog" and "car" don't share a single letter. So a semantic search for "puppy" can surface a document that only ever said "golden retriever" - the model finds the nearest point in meaning-space, not the nearest matching string.
 
 ## Model types: image vs. text, autoregressive generation
 
-- **Image models** and **text models** are architected differently for the same reason as the dimensionality section above — image models compress (millions of pixels → small representation), text models expand (few tokens → large representation) — but both are still built from the same neuron/layer structure underneath.
-- **Autoregressive** (not "regressive" — different term, regression means predicting a continuous number) generative models produce output **one token at a time**: predict a token, append it to the input, feed the whole thing back in, predict the next token. Repeats until done.
+Image and text models end up architected differently for the same reason as the dimensionality split above - one compresses, one expands - but underneath, both are still built from the same neuron/layer structure.
+
+Worth locking in the right word here: **autoregressive**, not "regressive." Regression means predicting a continuous number, a different thing entirely. Autoregressive generation means producing output one token at a time - predict a token, append it to the input, feed the whole thing back in, predict the next one, repeat until done:
 
 ```mermaid
 flowchart LR
@@ -107,7 +101,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    subgraph ENC["ENCODER — builds the internal representation"]
+    subgraph ENC["ENCODER - builds the internal representation"]
         direction LR
         I1((n1)) --> H1((n1))
         I1 --> H2((n2))
@@ -124,7 +118,7 @@ flowchart LR
     H2 --> R
     H3 --> R
 
-    subgraph DEC["DECODER — produces the output"]
+    subgraph DEC["DECODER - produces the output"]
         direction LR
         R --> H4((n1))
         R --> H5((n2))
@@ -133,15 +127,12 @@ flowchart LR
     end
 ```
 
-**Key points:**
-- **Neuron** = the smallest unit (same thing as "node" from the Layers section above). A group of neurons forms a **layer**.
-- Every layer except the **first** (input layer) and **last** (output layer) is a **hidden layer**.
-- **Encoder** = the input-side layers, which process the raw input down into one **internal representation**.
-- **Decoder** = the output-side layers, which take that internal representation and expand it back out into the final output.
-- Common mix-up worth flagging for next time: it's easy to say these backwards — encoder *builds* the representation, decoder *consumes* it to produce output, not the other way round.
+A neuron is the smallest unit - same thing as "node" above, just the book's preferred word. A group of neurons makes a layer, and every layer except the first (input) and last (output) counts as a hidden layer.
+
+The encoder/decoder split follows naturally from that: the input-side layers are the encoder, squeezing the raw input down into one internal representation. The output-side layers are the decoder, taking that representation and expanding it back out into the final answer. I had this backwards the first time I tried to explain it out loud - easy mix-up, so worth writing down plainly: encoder builds the representation, decoder consumes it.
 
 ## Open Questions
-- How exactly does an image model's pixel→embedding compression decide what's "redundant" vs "meaningful"? (Revisit when hands-on with a vision encoder.)
+- How exactly does an image model's pixel-to-embedding compression decide what's "redundant" vs "meaningful"? Revisit once I'm hands-on with a vision encoder.
 
 ## Next session
 Resume from **§2.1.1 Linear Layers and Matmul**.

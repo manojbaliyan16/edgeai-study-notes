@@ -1,4 +1,4 @@
-# Module 00 — Introduction to EdgeAI
+# Module 00 - Introduction to EdgeAI
 
 **Status:** In Progress
 **Source:** https://github.com/manojbaliyan16/edgeai-for-beginners/blob/main/introduction.md
@@ -26,11 +26,11 @@ flowchart LR
     end
 ```
 
-**Why this shift matters — eliminating the round-trip enables:**
+**Why this shift matters - eliminating the round-trip enables:**
 
 | Benefit | Why |
 |---|---|
-| Instantaneous responses | Sub-millisecond latency — no network hop, no cloud queue |
+| Instantaneous responses | Sub-millisecond latency - no network hop, no cloud queue |
 | Enhanced privacy | Data never leaves the device |
 | Reliable operation | Works without internet connectivity |
 | Reduced costs | Minimal bandwidth and cloud compute usage |
