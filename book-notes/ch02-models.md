@@ -133,6 +133,14 @@ The encoder/decoder split follows naturally from that: the input-side layers are
 
 ## §2.1.1 Linear Layers and Matmul
 
+**Vector vs. matrix, quickly:** a vector is a single list of numbers (one row or one column). A matrix is a grid of numbers, rows stacked on columns - really just several vectors lined up together.
+```
+vector:        matrix:
+[2]            [ 1   2 ]
+[1]            [ 0   1 ]
+               [ 3  -1 ]
+```
+
 A linear layer is the simplest form of matrix multiplication: an input vector goes in, gets multiplied by a weight matrix, a bias vector gets added, and an output vector comes out. First read that felt like a new concept on top of everything above, but it isn't - it's the same "each neuron computes `weight x input + bias`" idea, just written for a whole layer at once instead of one neuron at a time.
 
 Take the 3-neuron layer from earlier and give it a 2-number input, `x = [2, 1]`:
@@ -147,6 +155,40 @@ weight matrix W (3 neurons x 2 inputs)      input x       bias b       output
 Each row of the matrix belongs entirely to one neuron. Row 1 (`1, 2`) is neuron 1's weights, nobody else's - multiply it against the input, add neuron 1's own bias (1), and that's neuron 1's output: `(1x2) + (2x1) + 1 = 5`. Same for row 2: `(0x2) + (1x1) + 0 = 1`. Row 3: `(3x2) + (-1x1) + 2 = 7`.
 
 So `Wx + b` isn't a separate operation bolted onto the neuron picture - it's the exact same per-neuron calculation, packed row by row into one matrix so all three neurons get computed in a single step instead of a loop.
+
+## Activation functions - why a network needs them at all
+
+Stack linear layers with nothing between them and the math collapses on itself: `W2(W1x + b1) + b2` simplifies algebraically into one single `W'x + b'`. A 50-layer network with no activations is mathematically no more powerful than a 1-layer network, no matter how deep it looks on paper.
+
+```
+Stacked linear layers, no activation        Stacked layers WITH ReLU between them
+(always collapses to one straight line)     (genuinely bends - new shapes possible)
+
+  y                                           y
+  |                    .                      |              .
+  |                  .                        |         . .
+  |                .                          |       .
+  |              .                            |   . .
+  |____________.______ x                      |_.__________ x
+```
+
+That collapse is exactly what an activation function exists to prevent - it sits between every pair of linear layers specifically to break the chain, so depth actually buys something.
+
+**ReLU (Rectified Linear Unit)** is the simplest, most common one:
+
+```
+ReLU(x) = max(0, x)
+
+  y
+  |                /
+  |              /
+  |            /
+  |__________/________ x
+  |        0
+   (x < 0 -> output 0, flat)   (x > 0 -> output = x, unchanged)
+```
+
+Every neuron produces a raw number first (`weight x input + bias`) - that raw number is the pre-activation. Run it through ReLU and the result is the neuron's **activation**: negative input becomes 0, positive input passes through unchanged. That's the whole rule. "Activation function" is just the name for whatever bends that raw number before it moves on to the next layer.
 
 ## Open Questions
 - How exactly does an image model's pixel-to-embedding compression decide what's "redundant" vs "meaningful"? Revisit once I'm hands-on with a vision encoder.
