@@ -193,5 +193,49 @@ Every neuron produces a raw number first (`weight x input + bias`) - that raw nu
 ## Open Questions
 - How exactly does an image model's pixel-to-embedding compression decide what's "redundant" vs "meaningful"? Revisit once I'm hands-on with a vision encoder.
 
+## §2.2 LLM Inference Mechanics - tokens and the generation loop
+
+An LLM generates one token at a time, and each new token depends on every token before it. A **token** is a number standing for a chunk of text: a whole common word, or a fragment of a rarer one. Turning text into tokens and back needs no neural network. A tokenizer is just a lookup table, and the full table is the model's **vocabulary** (usually over 100,000 entries). Fewer tokens for the same text means fewer forward passes, so a more efficient tokenizer makes inference faster.
+
+```
+"Unbelievably good" -> [ "Un", "believ", "ably", " good" ] -> [4821, 90113, 2204, 1695]
+                        common words = 1 token, rare words split into pieces
+```
+
+Three token sequences can exist in one request:
+- **Input**: prompt, chat history, tool definitions
+- **Reasoning**: optional thinking tokens (reasoning models only)
+- **Output**: the answer
+
+All three together must fit inside the **context window**. `max_tokens` caps the output part only. A **chat template** flattens roles and tool signatures into the single input string; it differs per model, and tokenizing the templated input is step zero.
+
+```
+ text --chat template--> tokens
+                           |
+                   +-------v--------+
+                   |    PREFILL     |  read the whole input once, build the KV cache
+                   +-------+--------+
+                           |
+                   +-------v--------+
+              +--->|    DECODE      |  one forward pass = one token
+              |    +-------+--------+
+              |            | logits (one score per vocabulary entry)
+              |            v
+              |    normalize -> probabilities -> pick one token
+              |            |
+              +--- not stop token? append it, go again
+                           |
+                       stop token / max_tokens / context full -> done
+```
+
+The network's last layer outputs a **logit vector** as long as the vocabulary. After normalizing, each entry is the probability that token comes next. The pick is a weighted random draw, which three knobs steer:
+- **Temperature**: reshapes the logits before normalizing (lower = more predictable)
+- **Top-k**: keep only the k likeliest tokens, re-normalize
+- **Top-p**: keep the smallest set of tokens whose probabilities add up to p
+
+Temperature 0 or top-k 1 makes the pick deterministic (always the likeliest token). For structured output like JSON, **logit biasing** forces invalid tokens out after each pass.
+
+Prefill and decode account for nearly all inference time, because both run the big network.
+
 ## Next session
-Continue from §2.1.1, past the linear-layer/matmul equivalence above.
+Continue §2.2: dig into prefill vs decode (why one is compute-bound and the other memory-bound), then §2.2.1 LLM Architecture (`config.json`, how to read a name like `Qwen3MoeForCausalLM`).
