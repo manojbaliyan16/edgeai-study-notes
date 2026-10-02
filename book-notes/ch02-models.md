@@ -196,128 +196,177 @@ Every neuron produces a raw number first (`weight x input + bias`) - that raw nu
 
 ## §2.2 LLM Inference Mechanics
 
-### What inference is
+One picture holds all of this: the model is a student sitting an exam. Each idea below is one corner of that exam hall, and each ends with a phrase to say back when revising.
 
-Training is the one-time job of adjusting a model's weights until it predicts text well. It runs for weeks on a GPU cluster and ends with a file of weights (billions of numbers). Inference is using that finished file to answer a request. The weights are frozen, nothing is learned while answering.
+| Idea | Revision phrase |
+|---|---|
+| Inference | Study once, sit the exam forever |
+| Tokens | The student reads in syllables, not sentences |
+| Context window | One answer booklet per request, no extra pages |
+| Input | The app packs the bag, the model only unpacks it |
+| Prefill and decode | Read in bulk, write in drips |
+| KV cache | Margin notes beat rereading |
+| Picking the next word | Scores in, lottery ticket out |
+| Stopping | Stop at the full stop, or when the pages run out |
+| Architecture | The plan is not the bricks |
+| Model sizes | Same plan, bigger dials |
+| Base vs instruct | Base finishes your sentence, instruct answers your question |
 
-Think of training as studying for an exam and inference as sitting it. Your notes don't change mid-exam.
+### Inference: study once, sit the exam forever
 
-Inference is the part users actually touch. Every chat message, API call and autocomplete is one inference request, so the ongoing cost and the waiting time both live here. That is why inference engineering exists as its own field.
+Training is years in a library. The only thing that changes is the student's head, which means the weights, a file of billions of numbers. Inference is sitting one exam with that head frozen. Nothing is learned while answering.
 
-```mermaid
-flowchart LR
-  T["TRAINING<br/>learn from huge data<br/>weights change<br/>done once on a GPU cluster"] -->|"saves weights file"| I["INFERENCE<br/>answer a prompt<br/>weights frozen<br/>runs on every request"]
-```
-
-### Tokens and vocabulary
-
-An LLM generates one token at a time, and each new token depends on every token before it. A token is a number standing for a chunk of text: a whole common word, or a fragment of a rarer one. Turning text into tokens and back needs no neural network. The tokenizer is a plain lookup table, and the full table is the model's vocabulary (usually over 100,000 entries). A more efficient tokenizer means fewer tokens for the same text, so fewer forward passes and faster inference.
-
-```
-"Explain TLS"  ->  [ "Explain", " TLS" ]  ->  [ 1842, 9031 ]
-common words are one token, rare words split into pieces
-```
-
-### Three sequences and the context window
-
-A request can contain three token sequences:
-
-- **Input**: prompt, chat history, tool definitions.
-- **Reasoning**: optional, only for thinking models. Tokens the model writes to itself before answering.
-- **Output**: the answer.
-
-The **context window** is the total number of tokens the model can process and generate per request. All three sequences have to fit inside it together. `max_tokens` caps the output part only.
-
-```
-|<--------------------- context window --------------------->|
-|  INPUT                 |  REASONING        |  OUTPUT       |
-|  prompt, history,      |  optional,        |  the answer   |
-|  tool definitions      |  thinking models  |  (max_tokens  |
-|                        |  only             |  caps this)   |
-```
-
-The window is per request, not per conversation. The model remembers nothing between requests, so a chat app re-sends the earlier turns as part of the input each time. A long chat eats the window.
-
-### Who builds the input
-
-The model does not choose its input. The application collects the pieces, and the chat template (a model-specific format) flattens them into one token sequence. Tokenizing that flattened text is step zero of inference.
+The library bill is paid once. The exam bill is paid for every question from every user, for as long as the product runs. So serving cost and waiting time are inference problems, and that is why inference engineering is a field of its own.
 
 ```mermaid
 flowchart LR
-  S["system prompt<br/>developer rules"] --> CT
-  H["chat history<br/>earlier turns"] --> CT
-  U["your new message"] --> CT
-  TD["tool definitions"] --> CT
-  CT["chat template<br/>model-specific format"] --> SEQ["one flat token sequence"]
-  SEQ --> PF["goes into PREFILL"]
+  T["TRAINING<br/>years in the library<br/>weights change<br/>done once"] -->|"saves the weights file"| W["frozen weights"]
+  W --> R1["request 1"]
+  W --> R2["request 2"]
+  W --> R3["request 3, 4, 5 ... forever"]
 ```
 
-### The two phases
+### Tokens: the student reads in syllables, not sentences
 
-Every request runs in two phases:
+The model understands only numbers. A tokenizer is a dictionary that swaps each chunk of text for a number, like a Morse table, and swaps numbers back into text on the way out. It does no thinking. No neural network is involved in this step.
 
-- **Prefill**: read the whole input in one go. All input tokens are processed together, and the results are saved in the KV cache.
-- **Decode**: write the output one token per forward pass. Each token needs the ones before it, so passes cannot be skipped or run in parallel for a single request.
+The vocabulary is the fixed set of chunks the model can read or write, usually over 100,000 of them. The model can never produce anything outside that set. Rare words get spelled out from smaller pieces. Every chunk written is one more pass of work, so text that splits into fewer chunks is faster and cheaper.
+
+```mermaid
+flowchart LR
+  A["text in"] --> B["tokenizer<br/>dictionary lookup"]
+  B --> C["numbers"]
+  C --> D["the model<br/>the only neural network"]
+  D --> E["numbers"]
+  E --> F["tokenizer<br/>lookup in reverse"]
+  F --> G["text out"]
+```
+
+### Context window: one answer booklet per request, no extra pages
+
+The context window is the total number of tokens the model can process and generate in one request. Think of it as an answer booklet with a fixed number of pages. The question, any scratch work and the answer all share those pages.
+
+A request can hold up to three kinds of tokens. The input is what you send. Reasoning is optional scratch work that only thinking models produce. The output is the answer. A separate cap on answer length can limit the last part.
+
+A new request is a new booklet. The student remembers nothing from the last one. A chat app gets around this by photocopying the earlier turns into every new booklet, which is why a long chat runs out of pages.
+
+```mermaid
+flowchart LR
+  subgraph BOOKLET["one request = one booklet with a fixed page count"]
+    direction LR
+    I["INPUT<br/>question, history, tool list"] --> S["REASONING<br/>optional scratch work"] --> O["OUTPUT<br/>the answer"]
+  end
+```
+
+### Input: the app packs the bag, the model only unpacks it
+
+The student never chooses what lands on the desk. The application gathers the developer's rules, the earlier turns, the new message and the list of tools. A template then arranges them into the one format this model expects. If the packing is wrong, the model reads garbage and no amount of model quality fixes that.
+
+```mermaid
+flowchart LR
+  S["developer rules"] --> T
+  H["earlier turns"] --> T
+  U["new message"] --> T
+  L["tool list"] --> T
+  T["chat template<br/>the exam board's format"] --> Q["one flat token sequence"]
+  Q --> P["into PREFILL"]
+```
+
+### Prefill and decode: read in bulk, write in drips
+
+The question paper already exists in full, so the student takes it in all at once. That is prefill. The answer does not exist yet, and word 5 depends on word 4, so it can only be written one word at a time, each word needing its own pass through the student's head. That is decode.
+
+The two phases stress the hardware differently: reading is one big job, writing is many small repeated ones. Why that difference matters on a GPU is the next thing to work out.
 
 ```mermaid
 flowchart TD
-  A["text prompt"] --> B["chat template + tokenizer<br/>text to token numbers"]
-  B --> C["PREFILL<br/>read all input tokens at once<br/>fill the KV cache"]
-  C --> D["DECODE<br/>one forward pass"]
-  D --> E["logits<br/>one score per vocabulary word"]
-  E --> F["normalize to probabilities<br/>weighted random pick"]
-  F --> G{"stop token or<br/>limit reached?"}
-  G -->|"no: append token, go again"| D
-  G -->|yes| H["done"]
+  A["question text"] --> B["template + tokenizer"]
+  B --> C["PREFILL<br/>read every input token at once"]
+  C --> D["DECODE pass<br/>one trip through the network"]
+  D --> E["a score for every word in the vocabulary"]
+  E --> F["draw one word"]
+  F --> G{"end-of-answer word<br/>or pages run out?"}
+  G -->|"no: add the word, go again"| D
+  G -->|"yes"| H["done"]
 ```
 
-Prefill and decode account for nearly all inference time, because both run the full network.
+### KV cache: margin notes beat rereading
 
-### KV cache
+For a step called attention, each word needs to look back at earlier words. (The details of attention are not in these notes yet.) While reading, the student jots two margin notes beside every word. K is a label saying what the word is about. V is what the word contributes if someone looks it up.
 
-Attention is how each token looks back at the earlier tokens to decide which ones matter for it. (The mechanics are not covered in these notes yet.) For attention, every token produces two sets of numbers, called K and V, that later tokens read.
+A word only ever depends on the words before it, so its notes never change once written. When writing the answer, the student glances at the margin instead of rereading the paper and redoing every note. That margin is the KV cache.
 
-A token's K and V never change once computed, because earlier tokens never depend on later ones. So they are stored in a table with one row per token. That table is the KV cache.
+The price is desk space. The margin lives in GPU memory and grows by one entry for every word, so long conversations use more of it.
 
-```
-            token     K          V
- prefill    Explain   numbers    numbers
- (filled    TLS       numbers    numbers
-  at once)
- decode     is        numbers    numbers    <- added on pass 1
- (one row   a         numbers    numbers    <- added on pass 2
-  per pass) (next)    ......     ......     <- next pass adds its row here
+```mermaid
+flowchart TD
+  P["PREFILL<br/>write K and V notes for every input word, all at once"] --> C[("KV cache<br/>one note pair per word")]
+  C --> N["DECODE pass<br/>the new word looks at every note"]
+  N --> W["the new word adds its own note pair"]
+  W --> C
 ```
 
-- Without the cache, every decode pass would recompute K and V for all earlier tokens.
-- With the cache, a pass computes only the new token's row and reads the rest from the table.
-- The price is memory. The table sits in GPU memory and grows with every token, so longer conversations use more of it.
+### Picking the next word: scores in, lottery ticket out
 
-### How the output token is chosen
+At the end of every pass the network hands every word in the vocabulary a number of tickets. More plausible words get more. One ticket is drawn at random. The model does not decide, the lottery does, and training is what makes the right word hold most of the tickets.
 
-The last layer of the network produces a vector of logits, one score for every word in the vocabulary, so its length equals the vocabulary size. After normalizing, the scores become probabilities. The model does not decide the way a person does. The pick is a dice roll weighted by those probabilities. Training is what makes the right word score highest.
+Three dials shape the draw:
+- **Temperature** sharpens or evens out the piles. At 0 the biggest pile always wins, so the same input always gives the same output. Higher values move tickets toward small piles, so surprises get likelier.
+- **Top-k** trims by count: only the k biggest ticket holders enter the draw.
+- **Top-p** trims by share: the biggest holders enter until together they hold p percent of all tickets.
 
-```
-Prompt: "The capital of France is"        (example numbers, only the shape matters)
-
- Paris         ########################################  92%
- the           ##                                          4%
- a             #                                           2%
- Lyon          #                                           1%
- 99,996 others #                                           1% combined
-
- weighted dice roll: Paris comes out about 92 times in 100
+```mermaid
+pie showData title 100 tickets for the word after "The capital of France is"
+  "Paris" : 92
+  "the" : 4
+  "a" : 2
+  "Lyon" : 1
+  "all other words" : 1
 ```
 
-Three settings reshape that pick:
+### Stopping: stop at the full stop, or when the pages run out
 
-- **Temperature**: adjusts the logits before normalizing. Lower is more predictable, higher flattens the bars so other words get a chance.
-- **Top-k**: keep only the k most likely tokens, re-normalize among them.
-- **Top-p**: keep the smallest set of tokens whose probabilities add up to p.
+The student keeps writing until it produces a special end-of-answer word, or until the booklet is full, or until the answer-length cap is reached. An answer that ends mid-sentence usually means a limit was hit, not that the student finished.
 
-Temperature 0 or top-k 1 makes the pick deterministic: always the highest score, so the same input gives the same output. For structured output such as JSON, logit biasing pushes invalid tokens out after each pass.
+## §2.2.1 LLM architecture and size
 
-The loop repeats until the model produces a stop token (a special value meaning the output is finished), unless the context window or `max_tokens` is hit first.
+### Architecture: the plan is not the bricks
+
+An architecture is a building plan: which parts exist, how they connect, and what shape each part has. For an LLM the plan is a tall stack of identical blocks. Token numbers enter at the bottom and scores for the next word come out at the top. Parameters are the actual numbers that fill the plan, the weights and biases inside every layer. "8B" means 8 billion of them.
+
+### Model sizes: same plan, bigger dials
+
+Going from an 8B build to a 30B build means no redesign. You turn dials: more blocks in the stack, wider layers, more attention heads. Width counts double. A layer's weight table is as wide as it is tall, so a layer twice as wide holds about four times the numbers.
+
+More numbers means more to store. At 2 bytes per number, 8B is about 16 GB and 30B is about 60 GB, just to hold the weights and before any KV cache.
+
+```mermaid
+flowchart LR
+  PLAN["ONE ARCHITECTURE<br/>a stack of identical blocks"] -->|"fewer, narrower layers"| S["8B build<br/>8 billion numbers<br/>about 16 GB"]
+  PLAN -->|"more, wider layers"| B["30B build<br/>30 billion numbers<br/>about 60 GB"]
+```
+
+### Causal: each word looks left, never right
+
+Most chat LLMs are causal. When a word is processed it may only look at the words before it. That single rule is why a word's margin notes never change, so the KV cache works. It is also why writing goes one word at a time: the words to the right do not exist yet.
+
+### Base vs instruct: base finishes your sentence, instruct answers your question
+
+A base model was trained only to guess the next word over a huge pile of raw text. It holds the knowledge but has no idea you asked a question. A question looks to it like the first line of a worksheet, so it writes the next line, and nothing taught it when to stop.
+
+An instruct model is the same student after a short coaching course. It is first shown many example questions with good answers. Then people rate its answers and it is nudged toward the preferred ones. That coaching adds tone, polite refusals, the chat format and the habit of stopping when done. Plan and size stay the same, the numbers move a little.
+
+To tell them apart, look at the name. Words like Instruct, Chat or IT mean the coached version. A name without them is usually the base. Use instruct for chat, answers and tools. Use base for plain continuation, or as the starting point for your own fine-tune. An instruct model needs its own chat template at inference time, a base model takes plain text.
+
+Almost all the training cost goes into the base. The coaching on top is small, which is why one base usually ships with an instruct sibling of identical size.
+
+```mermaid
+flowchart LR
+  L["the library<br/>raw text, guess the next word"] --> BASE["BASE"]
+  BASE -->|"short coaching: example answers + feedback"| INS["INSTRUCT"]
+  BASE -->|"same question"| BO["keeps going like a quiz sheet"]
+  INS -->|"same question"| IO["answers, then stops"]
+```
 
 ## Next session
-Continue §2.2: why prefill and decode behave differently on a GPU (compute-bound vs memory-bound), then §2.2.1 LLM Architecture (`config.json`, how to read a name like `Qwen3MoeForCausalLM`).
+Work out why prefill and decode stress a GPU differently (compute-bound vs memory-bound), then continue to the transformer block, attention and mixture of experts.
